@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Storefront Attribution E2E Harness</title>
+</head>
+<body>
+  <h1 id="status">Ready</h1>
+  <div id="log"></div>
+
+  <script>
+    // ---------------------------------------------------------------------------
+    // Minimal WhaleClient replica (matches src/client.ts trackEvent + createSession)
+    // We inline this so the test fixture has zero build step — the E2E tests
+    // validate the HTTP contract the SDK sends, not internal wiring.
+    // ---------------------------------------------------------------------------
+
+    const STORE_ID = 'test-store-e2e';
+    const API_KEY  = 'wk_test_e2e_key';
+    const GATEWAY  = '';  // relative — Playwright intercepts via page.route()
+    const PROXY    = '/api/gw';
+    const SESSION_KEY = 'whale-analytics-session';
+
+    function log(msg) {
+      const el = document.getElementById('log');
+      const p = document.createElement('p');
+      p.textContent = msg;
+      el.appendChild(p);
+    }
+
+    // -- Session management (mirrors useAnalytics getOrCreateSession) -----------
+
+    async function getOrCreateSession() {
+      try {
+        const raw = localStorage.getItem(SESSION_KEY);
+        if (raw) {
+          const stored = JSON.parse(raw);
+          const TTL = 30 * 60 * 1000; // 30 min
+          if (Date.now() - stored.createdAt < TTL) {
+            // Refresh last_active silently
+            fetch(`${PROXY}/v1/stores/${STORE_ID}/storefront/sessions/${stored.id}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
+              body: JSON.stringify({ last_active_at: new Date().toISOString() }),
+            }).catch(() => {});
+            return stored.id;
+          }
+        }
+      } catch { /* ignore */ }
+
+      // Create new session
+      try {
+        const res = await fetch(`${PROXY}/v1/stores/${STORE_ID}/storefront/sessions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
+          body: JSON.stringify({
+            user_agent: navigator.userAgent,
+            referrer: document.referrer || undefined,
+          }),
+        });
+        const session = await res.json();
+        if (session?.id) {
+          localStorage.setItem(SESSION_KEY, JSON.stringify({ id: session.id, createdAt: Date.now() }));
+          return session.id;
+        }
+      } catch { /* ignore */ }
+
+      // Fallback local ID
+      const fallbackId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      localStorage.setItem(SESSION_KEY, JSON.stringify({ id: fallbackId, createdAt: Date.now() }));
+      return fallbackId;
+    }
+
+    // -- Event tracking (mirrors client.trackEvent + resilientSend) -------------
+
+    async function trackEvent(eventType, eventData) {
+      const sessionId = await getOrCreateSession();
+      const url = `${PROXY}/v1/stores/${STORE_ID}/storefront/events`;
+      const payload = {
+        session_id: sessionId,
+        event_type: eventType,
+        event_data: eventData || {},
+      };
+
+      await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
+        body: JSON.stringify(payload),
+        keepalive: true,
+      });
+
+      return payload;
+    }
+
+    // -- Pixel fire (mirrors MetaPixelProvider.track) ----------------------------
+
+    const META_EVENT_MAP = {
+      page_view: 'PageView',
+      product_view: 'ViewContent',
+      add_to_cart: 'AddToCart',
+      remove_from_cart: 'RemoveFromCart',
+      begin_checkout: 'InitiateCheckout',
+      purchase: 'Purchase',
+      search: 'Search',
+      category_view: 'ViewContent',
+    };
+
+    function firePixel(eventType, params) {
+      if (typeof window.fbq !== 'function') return;
+      const metaEvent = META_EVENT_MAP[eventType];
+      if (!metaEvent) return;
+      if (params && Object.keys(params).length > 0) {
+        window.fbq('track', metaEvent, params);
+      } else {
+        window.fbq('track', metaEvent);
+      }
+    }
+
+    // -- Combined track (gateway + pixel, mirrors useAnalytics.track) -----------
+
+    async function track(eventType, eventData) {
+      // Generate a shared event_id for deduplication across gateway + pixel
+      const eventId = crypto.randomUUID();
+      const dataWithId = { ...eventData, event_id: eventId };
+
+      // Fire pixel (client-side)
+      firePixel(eventType, dataWithId);
+
+      // Fire gateway event (server-side attribution)
+      const payload = await trackEvent(eventType, dataWithId);
+      return payload;
+    }
+
+    // -- UTM extraction (mirrors what storefronts should capture) ---------------
+
+    function extractUtmParams() {
+      const params = new URLSearchParams(window.location.search);
+      const utms = {};
+      for (const key of ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content']) {
+        const val = params.get(key);
+        if (val) utms[key] = val;
+      }
+      return utms;
+    }
+
+    // -- Page view helper (mirrors AnalyticsTracker + useAnalytics.trackPageView)
+
+    async function trackPageView(pathname, referrer) {
+      const utms = extractUtmParams();
+      return track('page_view', { url: pathname, referrer, ...utms });
+    }
+
+    // -- Product view helper (mirrors useAnalytics.trackProductView) -----------
+
+    async function trackProductView(productId, productName, category, price) {
+      return track('product_view', {
+        product_id: productId,
+        product_name: productName,
+        category,
+        price,
+      });
+    }
+
+    // -- Add to cart helper (mirrors useAnalytics.trackAddToCart) ---------------
+
+    async function trackAddToCart(productId, productName, quantity, price, tier) {
+      return track('add_to_cart', {
+        product_id: productId,
+        product_name: productName,
+        quantity,
+        price,
+        tier,
+      });
+    }
+
+    // -- Initialize Meta Pixel stub (queue-based, like MetaPixelProvider.load) --
+
+    function initPixelStub() {
+      if (!window.fbq) {
+        const n = function (...args) {
+          n.callMethod ? n.callMethod.apply(n, args) : n.queue.push(args);
+        };
+        window._fbq = n;
+        window.fbq = n;
+        n.push = n;
+        n.loaded = true;
+        n.version = '2.0';
+        n.queue = [];
+      }
+      window.fbq('init', 'test-pixel-e2e');
+    }
+
+    // -- Expose everything globally for Playwright evaluate() calls -------------
+
+    window.__harness = {
+      getOrCreateSession,
+      trackEvent,
+      track,
+      trackPageView,
+      trackProductView,
+      trackAddToCart,
+      extractUtmParams,
+      initPixelStub,
+      STORE_ID,
+      API_KEY,
+      SESSION_KEY,
+    };
+
+    log('Harness loaded');
+    document.getElementById('status').textContent = 'Loaded';
+  </script>
+</body>
+</html>

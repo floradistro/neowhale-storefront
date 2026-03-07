@@ -1,6 +1,7 @@
 // @neowhale/storefront — Core entry point (no React)
 export { WhaleClient } from './client.js'
 export { PixelManager } from './pixels/pixel-manager.js'
+export { resilientSend } from './resilient-send.js'
 export type {
   Product,
   PricingTier,

@@ -17,6 +17,7 @@ export function PixelInitializer({ onReady }: { onReady: (manager: PixelManager)
   useEffect(() => {
     if (!ctx || initialized.current) return
     if (typeof window === 'undefined') return
+    if (!ctx.config.trackingEnabled) return
     initialized.current = true
 
     const { client } = ctx
