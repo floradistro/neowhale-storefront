@@ -216,6 +216,18 @@ export interface WhaleStorefrontConfig {
   sessionTtl?: number
   /** Enable debug logging */
   debug?: boolean
+  /**
+   * Master toggle for all tracking (analytics, pixels, behavioral).
+   * When false every tracking call is a no-op.
+   * Defaults to true; can also be set via NEXT_PUBLIC_TRACKING_ENABLED env var.
+   */
+  trackingEnabled?: boolean
+  /**
+   * Fraction of sessions that record full behavioral replays (0 – 1).
+   * 0 = never, 1 = every session. Defaults to 0.1 (10 %).
+   * Can also be set via NEXT_PUBLIC_RECORDING_RATE env var.
+   */
+  recordingRate?: number
 }
 
 // ─── Event Types ────────────────────────────────────────────────────────────

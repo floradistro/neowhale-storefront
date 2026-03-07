@@ -17,6 +17,8 @@ export interface WhaleContextValue {
     storagePrefix: string
     sessionTtl: number
     debug: boolean
+    trackingEnabled: boolean
+    recordingRate: number
   }
   cartStore: CartStore
   authStore: AuthStore

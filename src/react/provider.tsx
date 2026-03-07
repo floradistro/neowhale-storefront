@@ -13,6 +13,23 @@ import { CartInitializer } from './components/cart-initializer.js'
 import { AuthInitializer } from './components/auth-initializer.js'
 import { PixelInitializer } from './components/pixel-initializer.js'
 
+/** Read a boolean env var (NEXT_PUBLIC_*). Returns undefined when absent. */
+function envBool(name: string): boolean | undefined {
+  if (typeof process === 'undefined') return undefined
+  const raw = (process.env as Record<string, string | undefined>)[name]
+  if (raw === undefined || raw === '') return undefined
+  return raw !== '0' && raw.toLowerCase() !== 'false'
+}
+
+/** Read a numeric env var (NEXT_PUBLIC_*). Returns undefined when absent. */
+function envNumber(name: string): number | undefined {
+  if (typeof process === 'undefined') return undefined
+  const raw = (process.env as Record<string, string | undefined>)[name]
+  if (raw === undefined || raw === '') return undefined
+  const n = Number(raw)
+  return Number.isFinite(n) ? n : undefined
+}
+
 export interface WhaleProviderProps extends WhaleStorefrontConfig {
   children: ReactNode
   /** Server-fetched products passed to client for hooks */
@@ -31,6 +48,8 @@ export function WhaleProvider({
   storagePrefix,
   sessionTtl,
   debug,
+  trackingEnabled,
+  recordingRate,
 }: WhaleProviderProps) {
   const pathname = usePathname()
   const [pixelManager, setPixelManager] = useState<PixelManager | null>(null)
@@ -50,6 +69,8 @@ export function WhaleProvider({
       storagePrefix: storagePrefix || 'whale',
       sessionTtl: sessionTtl || 30 * 60 * 1000,
       debug: debug || false,
+      trackingEnabled: trackingEnabled ?? envBool('NEXT_PUBLIC_TRACKING_ENABLED') ?? true,
+      recordingRate: recordingRate ?? envNumber('NEXT_PUBLIC_RECORDING_RATE') ?? 0.1,
     }
 
     const client = new WhaleClient({

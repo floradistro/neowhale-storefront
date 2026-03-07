@@ -24,6 +24,8 @@ import {
   signMedia,
 } from './client-queries.js'
 
+import { resilientSend } from './resilient-send.js'
+
 // -- WhaleClient --
 // Stateless HTTP wrapper around whale-gateway. Works server-side and client-side.
 // No React, no browser APIs (except fetch).
@@ -257,7 +259,13 @@ export class WhaleClient {
   }
 
   async trackEvent(params: { session_id: string; event_type: EventType; event_data?: Record<string, unknown> }): Promise<void> {
-    return this.request<void>('/storefront/events', { method: 'POST', body: JSON.stringify(params) })
+    const url = `${this.baseUrl}/v1/stores/${this.storeId}/storefront/events`
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'x-api-key': this.apiKey,
+    }
+    if (this._sessionToken) headers['Authorization'] = `Bearer ${this._sessionToken}`
+    await resilientSend(url, params, headers)
   }
 
   // -- Static Media Utilities --

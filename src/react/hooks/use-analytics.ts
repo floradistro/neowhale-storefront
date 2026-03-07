@@ -65,8 +65,12 @@ export function useAnalytics() {
     return sessionPromiseRef.current
   }, [client, config.sessionTtl, sessionKey])
 
+  const trackingEnabled = config.trackingEnabled
+
   const track = useCallback(
     async (eventType: EventType, data: Record<string, unknown> = {}) => {
+      if (!trackingEnabled) return
+
       // Fire pixel events instantly (client-side)
       pixelManager?.track(eventType, data)
 
@@ -78,11 +82,12 @@ export function useAnalytics() {
         // fire-and-forget
       }
     },
-    [client, getOrCreateSession, pixelManager]
+    [client, getOrCreateSession, pixelManager, trackingEnabled]
   )
 
   const linkCustomer = useCallback(
     async (customerId: string) => {
+      if (!trackingEnabled) return
       try {
         const sessionId = await getOrCreateSession()
         if (sessionId.startsWith('local-')) return
@@ -91,7 +96,7 @@ export function useAnalytics() {
         // ignore
       }
     },
-    [client, getOrCreateSession]
+    [client, getOrCreateSession, trackingEnabled]
   )
 
   const trackPageView = useCallback(
@@ -162,5 +167,9 @@ export function useAnalytics() {
     trackRemoveFromCart,
     linkCustomer,
     getOrCreateSession,
+    /** Whether tracking is globally enabled for this storefront */
+    trackingEnabled,
+    /** Configured recording sample rate (0–1) for behavioral session replays */
+    recordingRate: config.recordingRate,
   }
 }

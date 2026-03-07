@@ -30,6 +30,7 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
+    "test:e2e": "npx playwright test",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
@@ -57,12 +58,14 @@
     }
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "next": "^15.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "serve": "^14.2.6",
     "tsup": "^8.0.0",
     "typescript": "^5.7.0",
     "zustand": "^5.0.0"
